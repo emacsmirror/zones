@@ -6,11 +6,11 @@
 ;; Maintainer: Drew Adams
 ;; Copyright (C) 2010-2018, Drew Adams, all rights reserved.
 ;; Created: Sun Apr 18 12:58:07 2010 (-0700)
-;; Version: 2015-08-16
+;; Version: 2018-10-28
 ;; Package-Requires: ()
-;; Last-Updated: Sun Oct 21 11:52:29 2018 (-0700)
+;; Last-Updated: Sun Oct 28 18:46:30 2018 (-0700)
 ;;           By: dradams
-;;     Update #: 2031
+;;     Update #: 2075
 ;; URL: https://www.emacswiki.org/emacs/download/zones.el
 ;; Doc URL: https://www.emacswiki.org/emacs/Zones
 ;; Doc URL: https://www.emacswiki.org/emacs/MultipleNarrowings
@@ -19,7 +19,7 @@
 ;;
 ;; Features that might be required by this library:
 ;;
-;;   None
+;;   `backquote', `bytecomp', `cconv', `cl-lib', `macroexp'.
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -31,7 +31,7 @@
 ;;
 ;;    Bug reports etc.: (concat "drew" ".adams" "@" "oracle" ".com")
 ;;
- 
+
 ;;(@> "Index")
 ;;
 ;;  Index
@@ -55,7 +55,7 @@
 ;;    (@> "Command `zz-narrow-repeat'")
 ;;    (@> "Define Your Own Commands")
 ;;  (@> "Change log")
- 
+
 ;;(@* "Things Defined Here")
 ;;
 ;;  Things Defined Here
@@ -127,7 +127,7 @@
 ;;              `page.el' have been REDEFINED here:
 ;;
 ;;    `narrow-to-defun', `narrow-to-page'.
- 
+
 ;;(@* "Documentation")
 ;;
 ;;  Documentation
@@ -246,7 +246,7 @@
 ;;  * Sort them.
 ;;
 ;;  * Unite (coalesce) adjacent or overlapping zones (which includes
-;;    sorting them).
+;;    sorting them in ascending order of their cars).
 ;;
 ;;  * Intersect them.
 ;;
@@ -461,7 +461,7 @@
 ;;  That's it - just iterate over `zz-izones' with a function that
 ;;  takes the region as an argument.  What `zones.el' offers in this
 ;;  regard is a way to easily define a set of buffer zones.
- 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;;; Change Log:
@@ -722,12 +722,15 @@
 (eval-when-compile (require 'cl)) ;; case
 
 ;; Quiet the byte-compiler.
+(defvar hlt-last-face)                  ; In `highlight.el'
 (defvar mode-line-modes)                ; Emacs 22+
 (defvar narrow-map)                     ; Emacs 23+
 (defvar region-extract-function)        ; Emacs 25+
+(defvar repeat-message-function)        ; In `repeat.el'
+(defvar repeat-previous-repeated-command) ; In `repeat.el'
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
- 
+
 
 (defmacro zz-user-error (&rest args)
   `(if (fboundp 'user-error) (user-error ,@args) (error ,@args)))
@@ -751,7 +754,7 @@ Don't forget to mention your Emacs and library versions."))
   (defface zz-fringe-for-narrowing
       '((((background dark)) (:background "#FFFF2429FC15")) ; a dark magenta
         (t (:background "LightGreen")))
-    "*Face used for fringe when buffer is narrowed."
+    "Face used for fringe when buffer is narrowed."
     :group 'zones :group 'faces)
 
   (defcustom zz-narrowing-use-fringe-flag t
@@ -760,8 +763,8 @@ Don't forget to mention your Emacs and library versions."))
     :set (lambda (sym defs)
            (custom-set-default sym defs)
            (if (symbol-value sym)
-               (add-hook 'post-command-hook 'zz-set-fringe-for-narrowing)
-             (remove-hook 'post-command-hook 'zz-set-fringe-for-narrowing))))
+               (add-hook 'post-command-hook #'zz-set-fringe-for-narrowing)
+             (remove-hook 'post-command-hook #'zz-set-fringe-for-narrowing))))
 
   (defun zz-set-fringe-for-narrowing ()
     "Set fringe face if buffer is narrowed."
@@ -796,8 +799,7 @@ converted to use the new format, with elements (NUM START END).
 
 This is a destructive operation.  The value of the variable is updated
 to use the new format, and that value is returned."
-  (let ((oldval  (symbol-value zz-izones-var))
-        (newval  ()))
+  (let ((oldval  (symbol-value zz-izones-var)))
     (dolist (elt  oldval) (unless (consp (cddr elt)) (setcdr (cdr elt) (list (cddr elt)))))
     (symbol-value zz-izones-var)))
 
@@ -853,7 +855,7 @@ marker that points nowhere, then raise an error."
     (unless (equal buf1 buf2) (error "Zone has conflicting buffers: %S" zone))
     buf1))
 
-(defun zz-zones-complement (zones &optional beg end buffer)
+(defun zz-zones-complement (zones &optional beg end)
   "Return a list of zones that is the complement of ZONES, from BEG to END.
 ZONES is assumed to be a union, i.e., sorted by car, with no overlaps.
 Any extra info in a zone of ZONES, i.e., after the cadr, is ignored."
@@ -889,6 +891,9 @@ The limits do not need to be in numerical order.
 Each limit can be a number or a marker, but zones with markers for
 buffers other than BUFFER (default: current buffer) are ignored.
 
+Any zones that use markers for a buffer other than BUFFER (default:
+current buffer) are excluded.
+
 Returns a new list, which is sorted by the lower limit of each zone,
 which is its car.  (This is a non-destructive operation.)
 
@@ -898,7 +903,7 @@ The resulting zones are then sorted by their cars.
 `zz-two-zone-union' is then applied recursively to coalesce
 overlapping or adjacent zones.  This means also that any EXTRA info is
 combined whenever zones are merged together."
-  (let* ((filtered-zones  (zz-remove-zones-w-other-buffer-markers zones))
+  (let* ((filtered-zones  (zz-remove-zones-w-other-buffer-markers zones buffer))
          (flipped-zones   (mapcar #'zz-zone-ordered filtered-zones))
          (sorted-zones    (sort flipped-zones #'zz-car-<)))
     (zz-zone-union-1 sorted-zones)))
@@ -1194,7 +1199,7 @@ Put `zz-narrow' on `mouse-2' for the lighter suffix.
 
 ;;;###autoload
 (defun zz-add-zone (start end &optional variable not-buf-local-p set-var-p msgp) ; Bound to `C-x n a'.
-  "Add a zone for the text from START to END to the zones of VARIABLE.
+  "Add an izone for the text from START to END to the izones of VARIABLE.
 Return the new value of VARIABLE.
 
 This is a destructive operation: The list structure of the variable
@@ -1228,13 +1233,13 @@ Non-interactively:
                       (nloc   (and current-prefix-arg  (<= npref 0)  (not (boundp var))))
                       (setv   (and current-prefix-arg  (or (consp current-prefix-arg)  (= npref 0)))))
                  (list beg end var nloc setv t)))
-  (let* ((mrk1    (make-marker))
-         (mrk2    (make-marker))
-         (var     (or variable  zz-izones-var))
-         (IGNORE  (unless (or not-buf-local-p  (boundp var)) (make-local-variable var)))
-         (IGNORE  (when set-var-p (setq zz-izones-var  var)))
-         (IGNORE  (unless (boundp var) (set var ())))
-         (val     (symbol-value var))
+  (let* ((mrk1     (make-marker))
+         (mrk2     (make-marker))
+         (var      (or variable  zz-izones-var))
+         (_IGNORE  (unless (or not-buf-local-p  (boundp var)) (make-local-variable var)))
+         (_IGNORE  (when set-var-p (setq zz-izones-var  var)))
+         (_IGNORE  (unless (boundp var) (set var ())))
+         (val      (symbol-value var))
          sans-id  id-cons  id)
     (unless (zz-izones-p val) (error "Not an izones variable: `%s', value: `%S'" var val))
     (move-marker mrk1 start)
@@ -1274,21 +1279,21 @@ variable symbol:
 
 Non-nil optional arg NOMSG means do not display a status message."
   (interactive
-   (let* ((var     (or (and current-prefix-arg  (zz-read-any-variable "Variable: " zz-izones-var))
-                       zz-izones-var))
-          (npref   (prefix-numeric-value current-prefix-arg))
-          (nloc    (and current-prefix-arg  (<= npref 0)  (not (boundp var))))
-          (setv    (and current-prefix-arg  (or (consp current-prefix-arg)  (= npref 0))))
+   (let* ((var      (or (and current-prefix-arg  (zz-read-any-variable "Variable: " zz-izones-var))
+                        zz-izones-var))
+          (npref    (prefix-numeric-value current-prefix-arg))
+          (nloc     (and current-prefix-arg  (<= npref 0)  (not (boundp var))))
+          (setv     (and current-prefix-arg  (or (consp current-prefix-arg)  (= npref 0))))
           ;; Repeat all of the variable tests and actions, since we need to have the value, for its length.
-          (IGNORE  (unless nloc (make-local-variable var)))
-          (IGNORE  (when setv (setq zz-izones-var var)))
-          (IGNORE  (unless (boundp var) (set var ())))
-          (val     (symbol-value var))
-          (IGNORE  (unless (zz-izones-p val)
-                     (error "Not an izones variable: `%s', value: `%S'" var val)))
-          (IGNORE  (unless val (error "No zones - variable `%s' is empty" var)))
-          (len     (length val))
-          (num     (if (= len 1) 1 (read-number (format "Delete zone numbered (1 to %d): " len)))))
+          (_IGNORE  (unless nloc (make-local-variable var)))
+          (_IGNORE  (when setv (setq zz-izones-var var)))
+          (_IGNORE  (unless (boundp var) (set var ())))
+          (val      (symbol-value var))
+          (_IGNORE  (unless (zz-izones-p val)
+                      (error "Not an izones variable: `%s', value: `%S'" var val)))
+          (_IGNORE  (unless val (error "No zones - variable `%s' is empty" var)))
+          (len      (length val))
+          (num      (if (= len 1) 1 (read-number (format "Delete zone numbered (1 to %d): " len)))))
      (while (or (< num 1)  (> num len))
        (setq num  (read-number (format "Number must be between 1 and %d: " len))))
      (list num var nloc setv t)))
@@ -1311,7 +1316,7 @@ that are numbers or readable-marker objects are converted to markers.
 
 This is a non-destructive operation: it returns a new list."
   (let ((ii   1)
-        buf posn)
+        posn)
     (while (<  ii 3)
       (setq posn  (nth ii izone))
       (when (and (not (markerp posn))  (or (numberp posn)  (zz-readable-marker-p posn)))
@@ -1416,28 +1421,28 @@ value can be modified."
     (set var ())
     (dolist (nn  orig) (zz-add-zone (cadr nn) (car (cddr nn)) var))))
 
-;;; Non-destructive version.
-;;;
-;;; (defun zz-izone-limits-in-bufs (buffers &optional variable)
-;;;   "Return a list of all `zz-izone-limits' for each buffer in BUFFERS.
-;;; That is, return a list of all recorded buffer zones for BUFFERS.
-;;; If BUFFERS is nil, return the zones recorded for the current buffer.
-;;;
-;;; This is a non-destructive operation: The list returned is independent
-;;; of the `zz-izone-limits' list in each of the buffers.
-;;;
-;;; Optional arg VARIABLE is the izones variable to use.  If nil,
-;;; use the value of `zz-izones-var'.  The variable is evaluated in each
-;;; buffer (or in the current buffer, if BUFFERS is nil)."
-;;;
-;;;   (let ((limits  ()))
-;;;     (dolist (buf  (or (reverse buffers)  (list (current-buffer)))) ; Reverse so we keep the order.
-;;;       (with-current-buffer buf
-;;;         (setq limits  (append (zz-izone-limits (symbol-value (or variable  zz-izones-var))
-;;;                                              buf
-;;;                                              'ONLY-THIS-BUFFER)
-;;;                               limits))))
-;;;     limits))
+;; Non-destructive version.
+;;
+;; (defun zz-izone-limits-in-bufs (buffers &optional variable)
+;;   "Return a list of all `zz-izone-limits' for each buffer in BUFFERS.
+;; That is, return a list of all recorded buffer zones for BUFFERS.
+;; If BUFFERS is nil, return the zones recorded for the current buffer.
+;;
+;; This is a non-destructive operation: The list returned is independent
+;; of the `zz-izone-limits' list in each of the buffers.
+;;
+;; Optional arg VARIABLE is the izones variable to use.  If nil,
+;; use the value of `zz-izones-var'.  The variable is evaluated in each
+;; buffer (or in the current buffer, if BUFFERS is nil)."
+;;
+;;   (let ((limits  ()))
+;;     (dolist (buf  (or (reverse buffers)  (list (current-buffer)))) ; Reverse so we keep the order.
+;;       (with-current-buffer buf
+;;         (setq limits  (append (zz-izone-limits (symbol-value (or variable  zz-izones-var))
+;;                                              buf
+;;                                              'ONLY-THIS-BUFFER)
+;;                               limits))))
+;;     limits))
 
 (defun zz-izone-limits-in-bufs (buffers &optional variable)
   "Return a list of all `zz-izone-limits' for each buffer in BUFFERS.
@@ -1564,36 +1569,36 @@ reads any symbol, but it provides completion against variable names."
                                  (or default-value  var-at-pt)))
                              t))))
 
-;; Same as `tap-string-match-p' in `thingatpt+.el' and `icicle-string-match-p' in `icicles-fn.el'.
-(if (fboundp 'string-match-p)
-    (defalias 'zz-string-match-p 'string-match-p) ; Emacs 23+
-  (defun zz-string-match-p (regexp string &optional start)
-    "Like `string-match', but this saves and restores the match data."
-    (save-match-data (string-match regexp string start))))
+(defalias 'zz-string-match-p
+  (if (fboundp 'string-match-p)
+      #'string-match-p                  ; Emacs 23+
+   (lambda (regexp string &optional start)
+     "Like `string-match', but this saves and restores the match data."
+      (save-match-data (string-match regexp string start)))))
 
 (defun zz-repeat-command (command)
   "Repeat COMMAND."
  (let ((repeat-previous-repeated-command  command)
-       (repeat-message-function           'ignore)
+       (repeat-message-function           #'ignore)
        (last-repeatable-command           'repeat))
    (repeat nil)))
 
 ;;;###autoload
-(defun zz-narrow-repeat (arg)              ; Bound to `C-x n x'.
+(defun zz-narrow-repeat ()              ; Bound to `C-x n x'.
   "Cycle to the next buffer restriction (narrowing).
 This is a repeatable version of `zz-narrow'.
 
 Note that if the value of `zz-izones-var' is not buffer-local then you
 can use this command to cycle among regions in multiple buffers."
-  (interactive "P")
+  (interactive)
   (require 'repeat)
   (zz-repeat-command 'zz-narrow))
 
 ;;;###autoload
-(defun zz-select-region-repeat (arg) ; Bound to `C-x n r'.
+(defun zz-select-region-repeat () ; Bound to `C-x n r'.
   "Cycle to the next region.
 This is a repeatable version of `zz-select-region'."
-  (interactive "P")
+  (interactive)
   (require 'repeat)
   (zz-repeat-command 'zz-select-region))
 
@@ -1648,14 +1653,15 @@ Non-interactively: Non-nil MSGP means show a status message."
     (when msgp (message "Cloned `%s' to `%s'" from-variable to-variable))))
 
 ;;;###autoload
-(defalias 'zz-clone-and-coalesce-zones 'zz-clone-and-unite-zones)
+(defalias 'zz-clone-and-coalesce-zones #'zz-clone-and-unite-zones)
 ;;;###autoload
 (defun zz-clone-and-unite-zones (from-variable to-variable &optional msgp) ; Bound to `C-x n C'
   "Clone FROM-VARIABLE to TO-VARIABLE, then unite (coalesce) TO-VARIABLE.
-Return the new value of TO-VARIABLE.
-
 That is, use`zz-clone-zones' to fill TO-VARIABLE, then use
 `zz-unite-zones' on TO-VARIABLE.
+
+United zones are in ascending order of their cars.
+Return the new value of TO-VARIABLE.
 
 Use this when you do not want to unite the zones of FROM-VARIABLE (for
 example, you want to use them as possibly overlapping buffer
@@ -1677,12 +1683,14 @@ Non-interactively: Non-nil MSGP means show a status message."
     (when msgp (message "Cloned `%s' to `%s' and united `%s'" from-variable to-variable to-variable))))
 
 ;;;###autoload
-(defalias 'zz-coalesce-zones 'zz-unite-zones)
+(defalias 'zz-coalesce-zones #'zz-unite-zones)
 ;;;###autoload
 (defun zz-unite-zones (&optional variable msgp) ; Bound to `C-x n u'
   "Coalesce (unite) the izones of VARIABLE.
 A non-destructive operation: The new value of VARIABLE is a new list.
 Return the new value of VARIABLE.
+
+United zones are in ascending order of their cars.
 
 VARIABLE defaults to the value of `zz-izones-var'.
 With a prefix arg you are prompted for a different variable to use, in
@@ -1700,20 +1708,21 @@ Non-interactively:
                  (when (and current-prefix-arg  (<= npref 0)) (setq zz-izones-var var))
                  (list var t)))
   (let* ((var         (or variable  zz-izones-var))
-         (IGNORE      (unless (boundp var) (set var ())))
+         (_IGNORE     (unless (boundp var) (set var ())))
          (val         (symbol-value var))
-         (IGNORE      (unless (zz-izones-p val) (error "Not an izones variable: `%s', value: `%S'" var val)))
+         (_IGNORE     (unless (zz-izones-p val) (error "Not an izones variable: `%s', value: `%S'" var val)))
          (zone-union  (zz-zone-union (zz-izone-limits val))))
     (set var  (zz-izones-from-zones zone-union))
     (when msgp (message "Restrictions united for `%s'" var))
     (symbol-value var)))
 
 ;;;###autoload
-(defalias 'zz-add-zone-and-coalesce 'zz-add-zone-and-unite)
+(defalias 'zz-add-zone-and-coalesce #'zz-add-zone-and-unite)
 ;;;###autoload
 (defun zz-add-zone-and-unite (start end &optional variable msgp) ; Bound to `C-x n A'.
   "Add an izone from START to END to those of VARIABLE, and coalesce.
 Use `zz-add-zone', then apply `zz-unite-zones'.
+United zones are in ascending order of their cars.
 Return the new value of VARIABLE.
 
 This is a destructive operation: The list structure of the variable
@@ -1900,11 +1909,13 @@ value can be modified."
 ;;
 ;; Call `zz-add-zone' if interactive or `zz-add-zone-anyway-p'.
 ;;
+;; TODO: Update for more recent Emacs.
+;;
 ;;;###autoload
-(defun narrow-to-defun (&optional arg)
+(defun narrow-to-defun (&optional _ignore)
   "Make text outside current defun invisible.
 The visible defun is the one that contains point or follows point.
-Optional ARG is ignored.
+Optional arg _IGNORE is ignored.
 
 This is a destructive operation. The list structure of the variable
 that is the value of `zz-izones-var' can be modified."
@@ -2098,18 +2109,19 @@ The value of variable `zz-izones' defines the zones."
 
 (defun zz-noncontiguous-region-from-izones (&optional variable)
   "Return a noncontiguous region from value of value of VARIABLE.
-VARIABLE defaults to the value of `zz-izones-var'.
-An Emacs \"noncontiguous region\" (Emacs 25+) is what the value of
-`region-extract-function' returns.  It is like a list of basic zones,
-but the entry pairs are dotted: `(beg . end)', not `(beg end)'."
+VARIABLE defaults to the value of `zz-izones-var'.  An Emacs
+\"noncontiguous region\" (Emacs 25+) is what the value of
+`region-extract-function' returns for a METHOD argument of `bounds'.
+It is like a list of united basic zones, but the entry pairs are
+dotted: `(beg . end)', not `(beg end)'."
   (let ((iz-var  (make-symbol "NRFI")))
     (zz-dot-pairs (zz-izone-limits (zz-clone-and-unite-zones (or variable  zz-izones-var) iz-var)))))
 
 (defun zz-noncontiguous-region-from-zones (basic-zones)
   "Return a noncontiguous region from a list of BASIC-ZONES.
 An Emacs \"noncontiguous region\" (Emacs 25+) is what the value of
-`region-extract-function' returns.  It is like a list of basic zones,
-but the entry pairs are dotted: `(beg . end)', not `(beg end)'."
+`region-extract-function' returns.  It is like a list of united basic
+zones, but the entry pairs are dotted: `(beg . end)', not `(beg end)'."
   (zz-dot-pairs (zz-zone-union basic-zones)))
 
 (defun zz-dot-pairs (pairs)
