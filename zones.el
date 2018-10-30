@@ -1,12 +1,13 @@
 ;;; zones.el --- Zones of text - like multiple regions
 ;;
+;; Copyright (C) 2010-2018  Free Software Foundation, Inc.
+;;
 ;; Filename: zones.el
 ;; Description:  Zones of text - like multiple regions
 ;; Author: Drew Adams
-;; Maintainer: Drew Adams
-;; Copyright (C) 2010-2018, Drew Adams, all rights reserved.
+;; Maintainer: Drew Adams <drew.adams@oracle.com>
 ;; Created: Sun Apr 18 12:58:07 2010 (-0700)
-;; Version: 2018-10-28
+;; Version: 2018.10.28
 ;; Package-Requires: ()
 ;; Last-Updated: Sun Oct 28 18:46:30 2018 (-0700)
 ;;           By: dradams
