@@ -7,7 +7,7 @@
 ;; Author: Drew Adams
 ;; Maintainer: Drew Adams <drew.adams@oracle.com>
 ;; Created: Sun Apr 18 12:58:07 2010 (-0700)
-;; Version: 2018.11.01
+;; Version: 2018.11.1
 ;; Package-Requires: ()
 ;; Last-Updated: Thu Nov  1 09:46:25 2018 (-0700)
 ;;           By: dradams
