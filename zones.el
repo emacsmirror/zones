@@ -7,7 +7,7 @@
 ;; Author: Drew Adams
 ;; Maintainer: Drew Adams <drew.adams@oracle.com>
 ;; Created: Sun Apr 18 12:58:07 2010 (-0700)
-;; Version: 2018.11.1
+;; Version: 2018.11.13
 ;; Package-Requires: ()
 ;; Last-Updated: Thu Nov  1 09:46:25 2018 (-0700)
 ;;           By: dradams
@@ -78,12 +78,12 @@
 ;;    `zz-add-zone', `zz-add-zone-and-coalesce',
 ;;    `zz-add-zone-and-unite', `zz-add-zones-from-highlighting',
 ;;    `zz-clone-and-coalesce-zones', `zz-clone-and-unite-zones',
-;;    `zz-clone-zones', `zz-coalesce-zones', `zz-delete-zone',
-;;    `zz-narrow', `zz-narrow-repeat', `zz-query-replace-zones' (Emacs
-;;    25+), `zz-query-replace-regexp-zones' (Emacs 25+),
-;;    `zz-select-region', `zz-select-region-repeat',
-;;    `zz-set-izones-var', `zz-set-zones-from-highlighting',
-;;    `zz-unite-zones'.
+;;    `zz-clone-zones', `zz-coalesce-zones', `zz-create-face-zones',
+;;    `zz-delete-zone', `zz-narrow', `zz-narrow-repeat',
+;;    `zz-query-replace-zones' (Emacs 25+),
+;;    `zz-query-replace-regexp-zones' (Emacs 25+), `zz-select-region',
+;;    `zz-select-region-repeat', `zz-set-izones-var',
+;;    `zz-set-zones-from-highlighting', `zz-unite-zones'.
 ;;
 ;;  User options defined here:
 ;;
@@ -96,13 +96,14 @@
 ;;  Non-interactive functions defined here:
 ;;
 ;;    `zz-buffer-narrowed-p' (Emacs 22-23), `zz-buffer-of-markers',
-;;    `zz-car-<', `zz-dot-pairs', `zz-every',
-;;    `zz-izone-has-other-buffer-marker-p', `zz-izone-limits',
-;;    `zz-izone-limits-in-bufs', `zz-izones',
+;;    `zz-car-<', `zz-do-izones', `zz-do-zones', `zz-dot-pairs',
+;;    `zz-every', `zz-izone-has-other-buffer-marker-p',
+;;    `zz-izone-limits', `zz-izone-limits-in-bufs', `zz-izones',
 ;;    `zz-izones-from-noncontiguous-region' (Emacs 25+),
 ;;    `zz-izones-from-zones', `zz-izones-p', `zz-izones-renumber',
-;;    `zz-marker-from-object', `zz-markerize', `zz-max', `zz-min',
-;;    `zz-narrowing-lighter', `zz-noncontiguous-region-from-izones',
+;;    `zz-map-izones', `zz-map-zones', `zz-marker-from-object',
+;;    `zz-markerize', `zz-max', `zz-min', `zz-narrowing-lighter',
+;;    `zz-noncontiguous-region-from-izones',
 ;;    `zz-noncontiguous-region-from-zones', `zz-number-or-marker-p',
 ;;    `zz-overlays-to-zones', `zz-overlay-to-zone',
 ;;    `zz-overlay-union', `zz-rassoc-delete-all',
@@ -527,6 +528,13 @@
 ;;
 ;;(@* "Change log")
 ;;
+;; 2018/11/13 dadams
+;;     Added: zz-do-izones, zz-do-zones, zz-map-izones, zz-map-zones.
+;; 2018/11/12 dadams
+;;     Added: zz-create-face-zones.
+;;     zz-zone-union-1: Replaced recursive version with iterative version.
+;;     zz-unite-zones: Better message: give number of resulting zones.
+;;     zz-(add|set)-zones-from-highlighting: Added autoload cookie.
 ;; 2018/10/31 dadams
 ;;     Do not overwrite any user key bindings on narrow-map or ctl-x-map.
 ;;     Simplified defadvice.
@@ -923,6 +931,45 @@ marker that points nowhere, then raise an error."
     (unless (equal buf1 buf2) (error "Zone has conflicting buffers: %S" zone))
     buf1))
 
+(defun zz-do-zones (function &optional zones)
+  "Like `zz-map-zones', but without returning the result of mapping.
+The return value is undefined."
+  (when (functionp function)
+    (when (zz-izones-p zones)
+      (setq zones  (zz-izone-limits zones nil 'ONLY-THIS-BUFFER)))
+    (setq zones  (zz-zone-union zones))
+    (dolist (zone  zones) (funcall function (car zone) (cadr zone)))))
+
+(defun zz-map-zones (function &optional zones)
+  "Map binary FUNCTION over ZONES, applying it to the limits of each zone.
+ZONES can be a list of basic zones or a list like `zz-izones', that
+is, zones that have identifiers.  By default, ZONES is the value of
+`zz-izones'."
+  (if (not (functionp function))
+      (or zones  zz-izones)
+    (when (zz-izones-p zones)
+      (setq zones  (zz-izone-limits zones nil 'ONLY-THIS-BUFFER)))
+    (setq zones  (zz-zone-union zones))
+    (mapcar (lambda (zone) (funcall function (car zone) (cadr zone))) zones)))
+
+(defun zz-do-izones (function &optional izones)
+  "Like `zz-map-izones', but without returning the result of mapping.
+The return value is undefined."
+  (when (functionp function)
+    (setq izones  (zz-unite-zones izones))
+    (dolist (izone  izones) (funcall function (car izone) (cadr izone) (caddr izone)))))
+
+(defun zz-map-izones (function &optional izones)
+  "Map FUNCTION over IZONES.
+Apply FUNCTION to the first three elements of each izone, that is, the
+ identifier and the zone limits.
+IZONES is a list like `zz-izones', that is, zones with identifiers.
+By default, IZONES is the value of `zz-izones'."
+  (if (not (functionp function))
+      (or izones  zz-izones)
+    (setq izones  (zz-unite-zones izones))
+    (mapcar (lambda (izone) (funcall function (car izone) (cadr izone) (caddr izone))) izones)))
+
 (defun zz-zones-complement (zones &optional beg end)
   "Return a list of zones that is the complement of ZONES, from BEG to END.
 ZONES is assumed to be a union, i.e., sorted by car, with no overlaps.
@@ -975,14 +1022,29 @@ combined whenever zones are merged together."
          (sorted-zones    (sort flipped-zones #'zz-car-<)))
     (zz-zone-union-1 sorted-zones)))
 
+;; Recursive version.
+;; (defun zz-zone-union-1 (zones)
+;;   "Helper for `zz-zone-union'."
+;;   (if (null (cdr zones))
+;;       zones
+;;     (let ((new  (zz-two-zone-union (car zones) (cadr zones))))
+;;       (if new
+;;           (zz-zone-union-1 (cons new (cddr zones)))
+;;         (cons (car zones) (zz-zone-union-1 (cdr zones)))))))
+
 (defun zz-zone-union-1 (zones)
   "Helper for `zz-zone-union'."
   (if (null (cdr zones))
       zones
-    (let ((new  (zz-two-zone-union (car zones) (cadr zones))))
-      (if new
-          (zz-zone-union-1 (cons new (cddr zones)))
-        (cons (car zones) (zz-zone-union-1 (cdr zones)))))))
+    (let ((acc  ())
+          new)
+      (while zones
+        (setq new  (and (cdr zones)  (zz-two-zone-union (car zones) (cadr zones))))
+        (if new
+            (setq zones  (cons new (cddr zones)))
+          (setq acc    (cons (car zones) acc)
+                zones  (cdr zones))))
+      (setq acc  (nreverse acc)))))
 
 (defun zz-car-< (zone1 zone2)
   "Return non-nil if car of ZONE1 < car of ZONE2.
@@ -1779,7 +1841,9 @@ Non-interactively:
          (_IGNORE     (unless (zz-izones-p val) (error "Not an izones variable: `%s', value: `%S'" var val)))
          (zone-union  (zz-zone-union (zz-izone-limits val))))
     (set var  (zz-izones-from-zones zone-union))
-    (when msgp (message "Restrictions united for `%s'" var))
+    (when msgp
+      (let ((len  (length (symbol-value var))))
+        (message "Zones united for variable `%s': %d zone%s now" var len (if (> len 1) "s" ""))))
     (symbol-value var)))
 
 ;;;###autoload
@@ -1819,6 +1883,7 @@ Non-interactively:
   (zz-unite-zones variable msgp)
   (symbol-value variable))
 
+;;;###autoload
 (defun zz-add-zones-from-highlighting (&optional start end face only-hlt-face overlay/text fonk-lock-p msgp)
   "Add highlighted areas as zones to izones variable.
 By default, the text used is that highlighted with `hlt-last-face'.
@@ -1898,6 +1963,7 @@ When called from Lisp:
         (1 (message "1 zone added or updated"))
         (t (message "%s highlighted areas added or updated as zones" count))))))
 
+;;;###autoload
 (defun zz-set-zones-from-highlighting (&optional start end face only-hlt-face overlay/text fonk-lock-p msgp)
   "Replace value of izones variable with zones from the highlighted areas.
 Like `zz-add-zones-from-highlighting' (which see), but it replaces any
@@ -1913,6 +1979,34 @@ current zones instead of adding to them."
   (set zz-izones-var ())
   (zz-add-zones-from-highlighting start end face only-hlt-face overlay/text fonk-lock-p msgp))
 
+;;;###autoload
+(defun zz-create-face-zones (face &optional start end variable msgp)
+  "Set an izones variable to (united) zones of a face or background color.
+You are prompted for a face name or a color name.  If you enter a
+color, it is used for the face background.  The face foreground is
+determined by the value of `hlt-auto-face-foreground'.
+The variable defaults to `zz-izones'.  With a prefix arg you are
+  prompted for a different izones variable."
+  (interactive
+   (progn
+     (unless (require 'highlight nil t)
+       (error "You need library `highlight.el' for this command"))
+     (let ((fac  (hlt-read-bg/face-name "Choose background color or face: "
+                                        (and (symbolp hlt-last-face)  (symbol-name hlt-last-face))))
+           (var  (or (and current-prefix-arg  (zz-read-any-variable "Variable: " zz-izones-var))
+                     zz-izones-var)))
+       (if (hlt-nonempty-region-p)
+           (if (< (point) (mark)) (list (point) (mark) var t) (list (mark) (point) var t))
+         (list fac (point-min) (point-max) var t)))))
+  (unless (require 'highlight nil t)
+    (error "You need library `highlight.el' for this command"))
+  (unless (require 'isearch-prop nil t)
+    (error "You need library `isearch-prop.el' for this command"))
+  (unless (require 'zones nil t)
+    (error "You need library `zones' for this command"))
+  (font-lock-default-fontify-buffer)    ; Fontify the whole buffer.
+  (zz-set-zones-from-highlighting start end face nil 'text-prop)
+  (zz-unite-zones variable t))
 
 ;;---------------------
 
