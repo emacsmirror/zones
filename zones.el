@@ -7,11 +7,11 @@
 ;; Author: Drew Adams
 ;; Maintainer: Drew Adams <drew.adams@oracle.com>
 ;; Created: Sun Apr 18 12:58:07 2010 (-0700)
-;; Version: 2018.11.20
+;; Version: 2018.11.21
 ;; Package-Requires: ()
-;; Last-Updated: Tue Nov 20 08:04:44 2018 (-0800)
+;; Last-Updated: Wed Nov 21 06:57:27 2018 (-0800)
 ;;           By: dradams
-;;     Update #: 2538
+;;     Update #: 2644
 ;; URL: https://elpa.gnu.org/packages/zones.html
 ;; URL: https://www.emacswiki.org/emacs/download/zones.el
 ;; Doc URL: https://www.emacswiki.org/emacs/Zones
@@ -77,15 +77,16 @@
 ;;
 ;;    `zz-add-zone', `zz-add-zone-and-coalesce',
 ;;    `zz-add-zone-and-unite', `zz-add-zones-from-highlighting',
-;;    `zz-clone-and-coalesce-zones', `zz-clone-and-unite-zones',
-;;    `zz-clone-zones', `zz-coalesce-zones', `zz-create-face-zones',
-;;    `zz-delete-zone', `zz-narrow', `zz-narrow-repeat',
-;;    `zz-query-replace-zones' (Emacs 25+),
+;;    `zz-add-zones-matching-regexp', `zz-clone-and-coalesce-zones',
+;;    `zz-clone-and-unite-zones', `zz-clone-zones',
+;;    `zz-coalesce-zones', `zz-delete-zone', `zz-narrow',
+;;    `zz-narrow-repeat', `zz-query-replace-zones' (Emacs 25+),
 ;;    `zz-query-replace-regexp-zones' (Emacs 25+), `zz-select-region',
 ;;    `zz-select-region-by-id-and-text', `zz-select-region-repeat',
 ;;    `zz-select-zone', `zz-select-zone-by-id-and-text',
 ;;    `zz-select-zone-repeat', `zz-set-izones-var',
-;;    `zz-set-zones-from-highlighting', `zz-unite-zones'.
+;;    `zz-set-zones-from-face', `zz-set-zones-from-highlighting',
+;;    `zz-set-zones-matching-regexp', `zz-unite-zones'.
 ;;
 ;;  User options defined here:
 ;;
@@ -128,9 +129,10 @@
 ;;
 ;;  Internal variables defined here:
 ;;
-;;    `zz--fringe-remapping', `zz-izones', `zz-izones-var',
-;;    `zz-lighter-narrowing-part', `zz-zone-abstract-function',
-;;    `zz-zone-abstract-limit', `zz-add-zone-anyway-p'.
+;;    `zz--fringe-remapping', `zz-add-zone-anyway-p', `zz-izones',
+;;    `zz-izones-var', `zz-lighter-narrowing-part',
+;;    `zz-zone-abstract-function', `zz-zone-abstract-limit',
+;;    `zz-toggles-map'.
 ;;
 ;;  Macros defined here:
 ;;
@@ -418,23 +420,27 @@
 ;;  If you have already bound one of these keys then `zones.el' does
 ;;  not rebind that key; your bindings are respected.
 ;;
-;;  C-x n a   `zz-add-zone' - Add to current izones variable
-;;  C-x n A   `zz-add-zone-and-unite' - Add izone, then unite izones
+;;  C-x n #   `zz-select-zone-by-id-and-text' - Select zone as region
+;;  C-x n a   `zz-add-zone' - Add to current izones set (variable)
+;;  C-x n A   `zz-add-zone-and-unite' - Add zone, then unite zones
 ;;  C-x n c   `zz-clone-zones' - Clone zones from one var to another
 ;;  C-x n C   `zz-clone-and-unite-zones' - Clone then unite zones
 ;;  C-x n d   `narrow-to-defun'
 ;;  C-x n C-d `zz-delete-zone' - Delete an izone from current var
-;;  C-x n h   `hlt-highlight-regions' - Highlight izones
+;;  C-x n f   `zz-set-zones-from-face' - Set zone set to face areas
+;;  C-x n h   `hlt-highlight-regions' - Ad hoc zone highlighting
 ;;  C-x n H   `hlt-highlight-regions-in-buffers' - in multiple buffers
-;;  C-x n l   `zz-add-zones-from-highlighting' - Add highlighted areas
+;;  C-x n l   `zz-add-zones-from-highlighting' - Add from highlighted
 ;;  C-x n L   `zz-set-zones-from-highlighting' - Set to highlighted
 ;;  C-x n n   `narrow-to-region'
 ;;  C-x n p   `narrow-to-page'
-;;  C-x n r   `zz-select-zone-repeat' - Cycle as active regions
-;;  C-x n u   `zz-unite-zones' - Unite (coalesce) izones
-;;  C-x n v   `zz-set-izones-var' - Set `zz-izones-var' to a variable
+;;  C-x n r   `zz-add-zones-matching-regexp' - Add regexp-match zones
+;;  C-x n R   `zz-set-zones-matching-regexp' - Set zone set to matches
+;;  C-x n u   `zz-unite-zones' - Unite (coalesce) zones
+;;  C-x n v   `zz-set-izones-var' - Set current zones-set variable
 ;;  C-x n w   `widen'
-;;  C-x n x   `zz-narrow-repeat' - Cycle as buffer narrowings
+;;  C-x n x   `zz-narrow-repeat' - Cycle zones as buffer narrowing
+;;  C-x n C-x `zz-select-zone-repeat' - Cycle zones as active region
 ;;
 ;;
 ;;(@* "Command `zz-narrow-repeat'")
@@ -538,6 +544,18 @@
 ;;
 ;;(@* "Change log")
 ;;
+;; 2018/11/21 dadams
+;;     Added: zz-add-zones-matching-regexp, zz-set-zones-matching-regexp, zz-toggles-map,
+;;            condition-case-unless-debug alias.
+;;     Renamed: zz-create-face-zones to zz-set-zones-from-face.
+;;     zz-select-zone-by-id-and-text: Bind to C-x n #.
+;;     zz-select-zone-repeat: Changed binding from C-x n r to C-x n C-x.
+;;     Added bindings: isearchp-remove-dimming (C-x n D), isearchp-put-prop-on-zones (C-x n P),
+;;       zz-add-zones-matching-regexp (C-x n r), zz-set-zones-matching-regexp (C-x n R),
+;;       isearchp-zones-(back|for)ward(-regexp) (C-x n r|s, C-x n C-M-r|s), zz-query-replace-zones (C-x n M-%),
+;;       zz-query-replace-regexp-zones (C-x n C-M-%), zz-toggles-map (C-x n M-= d),
+;;       isearchp-toggle-anti-zones-invisible (C-x n M-= v), isearchp-toggle-zones-invisible (C-x n M-= V),
+;;       isearchp-toggle-complementing-domain (C-x n M-= ~).
 ;; 2018/11/20 dadams
 ;;     Added: zz-izone-p.
 ;;     zz-izones-p: Use zz-izone-p.
@@ -846,8 +864,12 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
+(unless (fboundp 'condition-case-unless-debug) ; Emacs 22-23.
+  (defalias 'condition-case-unless-debug 'condition-case-no-debug))
+
 (defalias 'zz-user-error
   (if (fboundp 'user-error) #'user-error #'error)) ; For Emacs 22-23.
+
 
 (defgroup zones nil
   "Zones of text - like multiple regions."
@@ -1257,7 +1279,7 @@ PREDICATE applied to ELEMENT."
 ;;;###autoload
 (defalias 'zz-select-region-by-id-and-text #'zz-select-zone-by-id-and-text)
 ;;;###autoload
-(defun zz-select-zone-by-id-and-text (id &optional variable msgp)
+(defun zz-select-zone-by-id-and-text (id &optional variable msgp) ; Bound to `C-x n #'
   "Select a zone by completing against its ID and its text (content).
 The text of the chosen zone is made the active region.
 
@@ -1804,7 +1826,7 @@ can use this command to cycle among zones in multiple buffers."
 ;;;###autoload
 (defalias 'zz-select-region-repeat #'zz-select-zone-repeat)
 ;;;###autoload
-(defun zz-select-zone-repeat () ; Bound to `C-x n r'.
+(defun zz-select-zone-repeat ()         ; Bound to `C-x n C-x'.
   "Cycle to the next zone, and make it the active region.
 Zones are cycled in chronological order of their recording.
 This is a repeatable version of `zz-select-zone'."
@@ -1973,7 +1995,94 @@ Non-interactively:
   (symbol-value variable))
 
 ;;;###autoload
-(defun zz-add-zones-from-highlighting (&optional start end face only-hlt-face overlay/text fonk-lock-p msgp)
+(defun zz-add-zones-matching-regexp (regexp ; Bound to `C-x n r'
+                                     &optional variable beg end not-buf-local-p set-var-p msgp)
+  "Add matches for REGEXP as zones to the izones of VARIABLE.
+If region is active, limit action to region.  Else, use whole buffer.
+Return the new value of VARIABLE.
+
+If `isearchp-dim-outside-search-area-flag' is non-nil then dim the
+non-contexts.  (You can use `\\[isearchp-remove-dimming]' or \
+`\\[isearchp-toggle-dimming-outside-search-area]' to remove the
+dimming.)
+
+See `zz-add-zone' for a description of VARIABLE, the use of a prefix
+arg, and the parameters when called from Lisp."
+  (interactive
+   (let* ((regx   (read-regexp "Add zones matching regexp: "))
+          (var    (or (and current-prefix-arg  (zz-read-any-variable "Variable: " zz-izones-var t))
+                      zz-izones-var))
+          (beg    (if (and transient-mark-mode  mark-active) (region-beginning) (point-min)))
+          (end    (if (and transient-mark-mode  mark-active) (region-end) (point-max)))
+          (npref  (prefix-numeric-value current-prefix-arg))
+          (nloc   (and current-prefix-arg  (<= npref 0)  (not (boundp var))))
+          (setv   (and current-prefix-arg  (or (consp current-prefix-arg)  (= npref 0)))))
+     (list regx var beg end nloc setv t)))
+  (unless (and beg  end) (setq beg  (point-min)
+                               end  (point-max)))
+  (unless (< beg end) (setq beg  (prog1 end (setq end  beg))))
+  (let ((last-beg  nil)
+        (num-hits  0))
+    (condition-case-unless-debug zz-add-zones-matching-regexp
+        (save-excursion
+          (goto-char (setq last-beg  beg))
+          (while (and beg  (< beg end)  (not (eobp))
+                      (progn (while (and (setq beg  (re-search-forward regexp end t))
+                                         (eq last-beg beg)
+                                         (not (eobp)))
+                               ;; Matched again, same place.  Advance 1 char.
+                               (forward-char) (setq beg  (1+ beg)))
+                             beg))      ; Stop if no more matches.
+            (setq num-hits  (1+ num-hits))
+            (let* ((hit-beg     (match-beginning 0))
+                   (hit-end     (match-end 0))
+                   (hit-string  (buffer-substring-no-properties hit-beg hit-end))
+                   (c-beg       last-beg)
+                   (c-end       (if beg (match-beginning 0) (min end (point-max)))) ; Truncate.
+                   end-marker)
+              (isearchp-add/remove-dim-overlay c-beg c-end 'ADD)
+              (cond ((not (string= "" hit-string))
+                     (zz-add-zone c-beg c-end variable not-buf-local-p set-var-p)
+                     (isearchp-add/remove-dim-overlay hit-beg hit-end nil))
+                    (t
+                     (isearchp-add/remove-dim-overlay hit-beg hit-end 'ADD))))
+            (goto-char (setq last-beg  beg))))
+      (error (error "%s" (error-message-string zz-add-zones-matching-regexp))))
+    (unless (> num-hits 0) (zz-user-error "No regexp matches"))
+    (when msgp
+      (let ((dim-msg  (if (not (bound-and-true-p
+                                isearchp-dim-outside-search-area-flag))
+                          ""
+                        (substitute-command-keys
+                         "; `\\[isearchp-remove-dimming]' or \
+`\\[isearchp-toggle-dimming-outside-search-area]' removes dimming"))))
+        (case num-hits
+          (1 (message "1 zone added%s" dim-msg))
+          (t (message "%d zones added or updated%s" num-hits dim-msg)))))
+    variable))
+
+;;;###autoload
+(defun zz-set-zones-matching-regexp (regexp ; Bound to `C-x n R'
+                                     &optional variable beg end not-buf-local-p set-var-p msgp)
+  "Replace value of izones variable with zones matching REGEXP.
+Like `zz-add-zones-matching-regexp' (which see), but it replaces any
+current zones instead of adding to them."
+  (interactive
+   (let* ((var    (or (and current-prefix-arg  (zz-read-any-variable "Variable: " zz-izones-var t))
+                      zz-izones-var))
+          (regx   (read-regexp (format "Set `%s' to zones matching regexp: " var)))
+          (beg    (if (and transient-mark-mode  mark-active) (region-beginning) (point-min)))
+          (end    (if (and transient-mark-mode  mark-active) (region-end) (point-max)))
+          (npref  (prefix-numeric-value current-prefix-arg))
+          (nloc   (and current-prefix-arg  (<= npref 0)  (not (boundp var))))
+          (setv   (and current-prefix-arg  (or (consp current-prefix-arg)  (= npref 0)))))
+     (list regx var beg end nloc setv t)))
+  (set variable ())
+  (zz-add-zones-matching-regexp regexp variable beg end not-buf-local-p set-var-p msgp))
+
+;;;###autoload
+(defun zz-add-zones-from-highlighting ( ; Bound to `C-x n l'
+                                       &optional start end face only-hlt-face overlay/text fonk-lock-p msgp)
   "Add highlighted areas as zones to izones variable.
 By default, the text used is that highlighted with `hlt-last-face'.
 With a non-negative prefix arg you are instead prompted for the face.
@@ -2053,7 +2162,8 @@ When called from Lisp:
         (t (message "%s highlighted areas added or updated as zones" count))))))
 
 ;;;###autoload
-(defun zz-set-zones-from-highlighting (&optional start end face only-hlt-face overlay/text fonk-lock-p msgp)
+(defun zz-set-zones-from-highlighting ( ; Bound to `C-x n L'
+                                       &optional start end face only-hlt-face overlay/text fonk-lock-p msgp)
   "Replace value of izones variable with zones from the highlighted areas.
 Like `zz-add-zones-from-highlighting' (which see), but it replaces any
 current zones instead of adding to them."
@@ -2069,7 +2179,7 @@ current zones instead of adding to them."
   (zz-add-zones-from-highlighting start end face only-hlt-face overlay/text fonk-lock-p msgp))
 
 ;;;###autoload
-(defun zz-create-face-zones (face &optional start end variable)
+(defun zz-set-zones-from-face (face &optional start end variable _msgp) ; Bound to `C-x n f'
   "Set an izones variable to (united) zones of a face or background color.
 You are prompted for a face name or a color name.  If you enter a
 color, it is used for the face background.  The face foreground is
@@ -2086,7 +2196,7 @@ The variable defaults to `zz-izones'.  With a prefix arg you are
                      zz-izones-var)))
        (if (hlt-nonempty-region-p)
            (if (< (point) (mark)) (list (point) (mark) var t) (list (mark) (point) var t))
-         (list fac (point-min) (point-max) var)))))
+         (list fac (point-min) (point-max) var t)))))
   (unless (require 'highlight nil t)
     (error "You need library `highlight.el' for this command"))
   (unless (require 'isearch-prop nil t)
@@ -2098,6 +2208,13 @@ The variable defaults to `zz-izones'.  With a prefix arg you are
   (zz-unite-zones variable t))
 
 ;;---------------------
+
+;; Put all toggle commands on prefix key `M-='.
+;;
+(defvar zz-toggles-map nil
+  "Keymap containing bindings for toggle commands for zones.")
+(define-prefix-command 'zz-toggles-map)
+
 (defun zz-add-key-bindings-to-narrow-map (bindings)
   "Add BINDINGS to `narrow-map'.
 \(For Emacs prior to Emacs 24, add bindings to prefix key `C-x n'.)"
@@ -2108,21 +2225,54 @@ The variable defaults to `zz-izones'.  With a prefix arg you are
               (cmd   (cdr binding)))
           (unless (lookup-key map kseq) (define-key map kseq cmd)))))))
 
-(zz-add-key-bindings-to-narrow-map '(("a" . zz-add-zone)
-                                     ("A" . zz-add-zone-and-unite)
-                                     ("c" . zz-clone-zones)
-                                     ("C" . zz-clone-and-unite-zones)
-                                     ("\C-d" . zz-delete-zone)
-                                     ("r" . zz-select-zone-repeat)
-                                     ("u" . zz-unite-zones)
-                                     ("v" . zz-set-izones-var)
-                                     ("x" . zz-narrow-repeat)))
+(zz-add-key-bindings-to-narrow-map '(("\M-=" . zz-toggles-map)
+                                     ("a"    . zz-add-zone)                                    ; C-x n a
+                                     ("A"    . zz-add-zone-and-unite)                          ; C-x n A
+                                     ("c"    . zz-clone-zones)                                 ; C-x n c
+                                     ("C"    . zz-clone-and-unite-zones)                       ; C-x n C
+                                     ("\C-d" . zz-delete-zone)                                 ; C-x n C-d
+                                     ("\C-x" . zz-select-zone-repeat)                          ; C-x n C-x
+                                     ("#"    . zz-select-zone-by-id-and-text)                  ; C-x n #
+                                     ("u"    . zz-unite-zones)                                 ; C-x n u
+                                     ("v"    . zz-set-izones-var)                              ; C-x n v
+                                     ("x"    . zz-narrow-repeat)                               ; C-x n x
+                                     ))
 
 (eval-after-load "highlight"
-  '(zz-add-key-bindings-to-narrow-map '(("h" . hlt-highlight-regions)
-                                        ("H" . hlt-highlight-regions-in-buffers)
-                                        ("l" . zz-add-zones-from-highlighting)
-                                        ("L" . zz-set-zones-from-highlighting))))
+  '(zz-add-key-bindings-to-narrow-map '(("h" . hlt-highlight-regions)                          ; C-x n h
+                                        ("H" . hlt-highlight-regions-in-buffers)               ; C-x n H
+                                        ("l" . zz-add-zones-from-highlighting)                 ; C-x n l
+                                        ("L" . zz-set-zones-from-highlighting)                 ; C-x n L
+                                        )))
+
+(eval-after-load "isearch-prop"
+  '(progn
+    (zz-add-key-bindings-to-narrow-map `(("D"       . isearchp-remove-dimming)                 ; C-x n D
+                                         ("P"       . isearchp-put-prop-on-zones)              ; C-x n P
+                                         ("r"       . zz-add-zones-matching-regexp)            ; C-x n r
+                                         ("R"       . zz-set-zones-matching-regexp)            ; C-x n R
+                                         ("\C-r"    . isearchp-zones-backward)                 ; C-x n C-r
+                                         ("\C-\M-r" . isearchp-zones-backward-regexp)          ; C-x n C-M-r
+                                         ("\C-s"    . isearchp-zones-forward)                  ; C-x n C-s
+                                         ("\C-\M-s" . isearchp-zones-forward-regexp)           ; C-x n C-M-s
+                                         ("\M-%"    . zz-query-replace-zones)                  ; C-x n M-%
+                                         (,(kbd "C-M-%") . zz-query-replace-regexp-zones)      ; C-x n C-M-%
+;;                                       ("???" . zz-replace-regexp-zones)
+;;                                       ("???" . zz-replace-string-zones)
+;;                                       ("???" . zz-map-query-replace-regexp-zones)
+;;                                       ("???" . isearchp-make-anti-zones-invisible)
+;;                                       ("???" . isearchp-make-anti-zones-visible)
+;;                                       ("???" . isearchp-make-zones-invisible)
+;;                                       ("???" . isearchp-make-zones-visible)
+;;                                       ("???" . isearchp-toggle-zone/anti-zone-visibility)
+                                         ))
+    (define-key zz-toggles-map (kbd "d")     'isearchp-toggle-dimming-outside-search-area)     ; C-x n M-= d
+    (define-key zz-toggles-map (kbd "v")     'isearchp-toggle-anti-zones-invisible)            ; C-x n M-= v
+    (define-key zz-toggles-map (kbd "V")     'isearchp-toggle-zones-invisible)                 ; C-x n M-= V
+    (define-key zz-toggles-map (kbd "~")     'isearchp-toggle-complementing-domain)            ; C-x n M-= ~
+    ))
+
+
 
 ;; Call `zz-add-zone' if interactive or if `zz-add-zone-anyway-p'.
 
