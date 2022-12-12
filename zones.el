@@ -2633,7 +2633,7 @@ This uses `zz-overlay-to-zone', which see for optional arg POS-TYPE.
 By default, the zones are basic zones.  Non-nil optional arg IZONES-P
 means they are izones.
 
-Note: If you plan to coelesce the resulting ZONES (using, e.g.,
+Note: If you plan to coalesce the resulting ZONES (using, e.g.,
 `zz-unite-zones') then you will no doubt want to ensure that the
 OVERLAYS are all of the same type."
   (let ((zones  (delq nil (mapcar `(lambda (ov) (zz-overlay-to-zone ov ',pos-type)) overlays))))
